@@ -1,9 +1,10 @@
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open('v1').then((cache) => {
+      // 이 부분을 'index.html'로 수정합니다.
       return cache.addAll([
         './',
-        './cut out PHONE.html' // 이 부분을 실제 HTML 파일 이름으로 변경하세요. 예: './cut out PHONE.html'
+        './index.html' 
       ]);
     })
   );
