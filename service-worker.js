@@ -1,28 +1,30 @@
-let sharedFile = null;
-
-// 앱(클라이언트)이 준비되었다고 메시지를 보내면, 보관중인 파일을 전달합니다.
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.action === 'get-shared-file') {
-    if (sharedFile) {
-      event.source.postMessage({ file: sharedFile });
-      sharedFile = null; // 전달 후에는 비워줍니다.
-    }
-  }
-});
-
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
-self.addEventListener('fetch', (event) => {
-  // 공유를 통해 앱이 실행되었을 때 POST 요청을 가로챕니다.
-  if (event.request.method === 'POST' && event.request.url.includes('index.html')) {
-    event.respondWith(Response.redirect('./')); // 앱 메인 페이지로 이동시키고,
+// 이 함수는 열려있는 모든 앱 창을 찾아서 파일을 보내주는 역할을 합니다.
+async function sendFileToClients(file) {
+  const clients = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true
+  });
+  if (clients && clients.length) {
+    clients.forEach(client => {
+      client.postMessage({ file: file });
+    });
+  }
+}
 
-    // 파일 처리가 끝날 때까지 서비스워커가 종료되지 않도록 합니다.
+self.addEventListener('fetch', (event) => {
+  // 공유를 통해 POST 요청이 들어오면 가로챕니다.
+  if (event.request.method === 'POST' && event.request.url.includes('index.html')) {
+    event.respondWith(Response.redirect('./'));
+
+    // 파일 처리가 끝날 때까지 서비스 워커가 종료되지 않도록 합니다.
     event.waitUntil(async function () {
       const formData = await event.request.formData();
-      sharedFile = formData.get('image'); // 파일을 변수에 임시 저장합니다.
+      const file = formData.get('image');
+      await sendFileToClients(file); // 파일을 받으면 즉시 앱으로 전달
     }());
     return;
   }
