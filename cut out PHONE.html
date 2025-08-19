@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>스크롤 캡처 편집기 (최종)</title>
+    
+    <!-- PWA를 위한 추가 코드 1: manifest.json 연결 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a73e8">
+
+    <style>
+        /* CSS는 이전과 동일합니다. */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: #f0f2f5; color: #333; margin: 0; padding: 20px;
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
+            min-height: 100vh; box-sizing: border-box;
+        }
+        .container {
+            width: 100%; max-width: 500px; background-color: #fff;
+            padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-sizing: border-box;
+        }
+        h1 { text-align: center; color: #1a73e8; margin-top: 0; margin-bottom: 20px; }
+        p { text-align: center; color: #5f6368; line-height: 1.5; margin-bottom: 25px; }
+        .button {
+            display: block; width: 100%; padding: 15px; font-size: 16px; font-weight: bold;
+            color: #fff; background-color: #1a73e8; border: none; border-radius: 8px;
+            cursor: pointer; text-align: center; margin-bottom: 15px; transition: background-color 0.2s;
+        }
+        .button:hover { background-color: #185abc; }
+        .button.secondary { background-color: #e8eaed; color: #3c4043; }
+        .button.secondary:hover { background-color: #dadce0; }
+        .button:disabled { background-color: #ccc; cursor: not-allowed; }
+        input[type="file"] { display: none; }
+        #canvas-container { position: relative; margin-top: 20px; touch-action: none; }
+        canvas { display: block; max-width: 100%; height: auto; border: 1px dashed #ccc; border-radius: 8px; }
+        #result-container { margin-top: 20px; text-align: center; }
+        #result-image { max-width: 100%; height: auto; border: 2px solid #4caf50; border-radius: 8px; margin-bottom: 15px; }
+        #selection-controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
+        .selection-info {
+            display: flex; justify-content: space-between; align-items: center; padding: 10px;
+            border: 1px solid #ddd; border-radius: 6px; font-size: 14px;
+            color: #555; background-color: #fafafa;
+        }
+        .selection-remove {
+            background: none; border: none; color: #d32f2f; cursor: pointer;
+            font-size: 20px; line-height: 1; padding: 5px; border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        .selection-remove:hover { background-color: #ffebee; }
+        .button-group { display: flex; gap: 10px; }
+        .button-group .button { width: 100%; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✂️ 스크롤 캡처 편집기</h1>
+        <p>긴 스크린샷에서 불필요한 부분을<br>드래그하여 여러 번 선택하고 잘라내세요.</p>
+
+        <label for="image-loader" class="button">1. 이미지 선택하기</label>
+        <input type="file" id="image-loader" accept="image/*"/>
+
+        <div id="selection-controls"></div>
+
+        <div class="button-group">
+            <button id="undo-button" class="button secondary" disabled>↩️ 실행 취소</button>
+            <button id="crop-button" class="button secondary" disabled>2. 잘라내기</button>
+        </div>
+
+        <div id="canvas-container">
+            <canvas id="image-canvas"></canvas>
+        </div>
+
+        <div id="result-container" style="display: none;">
+            <h2>✨ 편집 완료!</h2>
+            <img id="result-image" src="" alt="편집된 이미지">
+            <a id="download-link" class="button">3. 이미지 저장하기</a>
+        </div>
+    </div>
+
+    <script>
+        // 기존 자바스크립트 코드는 여기에 그대로 유지됩니다.
+        const imageLoader = document.getElementById('image-loader');
+        const canvas = document.getElementById('image-canvas');
+        const ctx = canvas.getContext('2d');
+        const cropButton = document.getElementById('crop-button');
+        const undoButton = document.getElementById('undo-button');
+        const resultContainer = document.getElementById('result-container');
+        const resultImage = document.getElementById('result-image');
+        const downloadLink = document.getElementById('download-link');
+        const selectionControls = document.getElementById('selection-controls');
+
+        let originalImage = null;
+        let originalFileName = 'edited-image.png';
+        let isSelecting = false;
+        let currentSelection = { startY: 0, endY: 0 };
+        let selections = [];
+        let history = [];
+
+        const saveState = () => {
+            history.push(JSON.parse(JSON.stringify(selections)));
+            updateButtonStates();
+        };
+
+        const undo = () => {
+            if (history.length > 1) {
+                history.pop();
+                selections = JSON.parse(JSON.stringify(history[history.length - 1]));
+                updateSelectionDisplay();
+                redrawCanvasWithSelections();
+            }
+        };
+        
+        const updateButtonStates = () => {
+            cropButton.disabled = selections.length === 0;
+            undoButton.disabled = history.length <= 1;
+        };
+
+        undoButton.addEventListener('click', undo);
+
+        imageLoader.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            originalFileName = file.name;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                originalImage = new Image();
+                originalImage.onload = () => {
+                    canvas.width = originalImage.width;
+                    canvas.height = originalImage.height;
+                    ctx.drawImage(originalImage, 0, 0);
+                    resultContainer.style.display = 'none';
+                    selections = [];
+                    history = [];
+                    saveState();
+                    updateSelectionDisplay();
+                };
+                originalImage.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        const getClientY = (e) => e.touches ? e.touches[0].clientY : e.clientY;
+
+        const startSelection = (e) => {
+            if (!originalImage) return;
+            isSelecting = true;
+            const rect = canvas.getBoundingClientRect();
+            const scaleY = canvas.height / rect.height;
+            currentSelection.startY = (getClientY(e) - rect.top) * scaleY;
+            currentSelection.endY = currentSelection.startY;
+        };
+
+        const drawSelection = (e) => {
+            if (!isSelecting) return;
+            const rect = canvas.getBoundingClientRect();
+            const scaleY = canvas.height / rect.height;
+            currentSelection.endY = (getClientY(e) - rect.top) * scaleY;
+            redrawCanvasWithSelections();
+        };
+
+        const endSelection = () => {
+            if (!isSelecting) return;
+            isSelecting = false;
+            const startY = Math.min(currentSelection.startY, currentSelection.endY);
+            const endY = Math.max(currentSelection.startY, currentSelection.endY);
+            if (endY - startY > 1) {
+                selections.push({ startY, endY });
+                selections.sort((a, b) => a.startY - b.startY);
+                saveState();
+                updateSelectionDisplay();
+            }
+            currentSelection = { startY: 0, endY: 0 };
+            redrawCanvasWithSelections();
+        };
+
+        function updateSelectionDisplay() {
+            selectionControls.innerHTML = '';
+            selections.forEach((selection, index) => {
+                const div = document.createElement('div');
+                div.className = 'selection-info';
+                div.innerHTML = `<span>영역 ${index + 1}: ${Math.round(selection.startY)} ~ ${Math.round(selection.endY)}px</span><button class="selection-remove" data-index="${index}">&times;</button>`;
+                selectionControls.appendChild(div);
+            });
+            document.querySelectorAll('.selection-remove').forEach(button => {
+                button.addEventListener('click', function() {
+                    const indexToRemove = parseInt(this.dataset.index, 10);
+                    selections.splice(indexToRemove, 1);
+                    saveState();
+                    updateSelectionDisplay();
+                    redrawCanvasWithSelections();
+                });
+            });
+            updateButtonStates();
+        }
+
+        function redrawCanvasWithSelections() {
+            if (!originalImage) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(originalImage, 0, 0);
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+            selections.forEach(sel => ctx.fillRect(0, sel.startY, canvas.width, sel.endY - sel.startY));
+            if (isSelecting) {
+                const startY = Math.min(currentSelection.startY, currentSelection.endY);
+                const endY = Math.max(currentSelection.startY, currentSelection.endY);
+                if (endY > startY) {
+                    ctx.fillRect(0, startY, canvas.width, endY - startY);
+                }
+            }
+        }
+
+        cropButton.addEventListener('click', () => {
+            if (!originalImage || cropButton.disabled) return;
+            const sortedSelections = [...selections].sort((a, b) => a.startY - b.startY);
+            let currentY = 0;
+            const parts = [];
+            let totalRemovedHeight = 0;
+
+            sortedSelections.forEach(sel => {
+                if (sel.startY > currentY) {
+                    parts.push({ startY: currentY, endY: sel.startY });
+                }
+                totalRemovedHeight += (sel.endY - sel.startY);
+                currentY = sel.endY;
+            });
+
+            if (originalImage.height - currentY > 1) {
+                parts.push({ startY: currentY, endY: originalImage.height });
+            }
+
+            const newHeight = originalImage.height - totalRemovedHeight;
+            if (newHeight <= 0) {
+                // alert()는 PWA에서 잘 보이지 않을 수 있으므로, 다른 방식을 고려하는 것이 좋습니다.
+                // 여기서는 일단 유지합니다.
+                alert("이미지의 모든 부분이 선택되어 저장할 내용이 없습니다.");
+                return;
+            }
+
+            const newCanvas = document.createElement('canvas');
+            newCanvas.width = originalImage.width;
+            newCanvas.height = newHeight;
+            const newCtx = newCanvas.getContext('2d');
+            newCtx.fillStyle = '#FFFFFF';
+            newCtx.fillRect(0, 0, newCanvas.width, newCanvas.height);
+
+            let offsetY = 0;
+            parts.forEach(part => {
+                const height = part.endY - part.startY;
+                if (height > 0) {
+                    newCtx.drawImage(originalImage, 0, part.startY, originalImage.width, height, 0, offsetY, originalImage.width, height);
+                    offsetY += height;
+                }
+            });
+
+            const dataUrl = newCanvas.toDataURL('image/jpeg', 0.95);
+            resultImage.src = dataUrl;
+            downloadLink.href = dataUrl;
+            const nameWithoutExtension = originalFileName.lastIndexOf('.') > 0 ? originalFileName.substring(0, originalFileName.lastIndexOf('.')) : originalFileName;
+            downloadLink.download = `${nameWithoutExtension}.jpg`;
+            resultContainer.style.display = 'block';
+            resultContainer.scrollIntoView({ behavior: 'smooth' });
+        });
+
+        canvas.addEventListener('mousedown', startSelection);
+        canvas.addEventListener('mousemove', drawSelection);
+        canvas.addEventListener('mouseup', endSelection);
+        canvas.addEventListener('mouseleave', endSelection);
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startSelection(e); });
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); drawSelection(e); });
+        canvas.addEventListener('touchend', endSelection);
+    </script>
+
+    <!-- PWA를 위한 추가 코드 2: 서비스 워커 등록 -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./service-worker.js')
+            .then(registration => {
+              console.log('ServiceWorker registration successful');
+            })
+            .catch(err => {
+              console.log('ServiceWorker registration failed: ', err);
+            });
+        });
+      }
+    </script>
+</body>
+</html>

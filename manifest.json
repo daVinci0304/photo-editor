@@ -1,0 +1,16 @@
+{
+  "name": "스크롤 캡처 편집기",
+  "short_name": "캡처 편집",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#1a73e8",
+  "description": "긴 스크린샷 편집기",
+  "icons": [
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
