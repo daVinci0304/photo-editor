@@ -5,12 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>스크롤 캡처 편집기</title>
     
-    <!-- PWA를 위한 manifest.json 연결 -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a73e8">
 
     <style>
-        /* CSS는 변경되지 않았습니다. */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
             background-color: #f0f2f5; color: #333; margin: 0; padding: 20px;
@@ -98,8 +96,9 @@
         let selections = [];
         let history = [];
 
-        // --- 공유 기능을 위해 추가/수정된 부분 ---
-        // 서비스 워커로부터 공유된 파일을 받는 리스너
+        // --- 공유 기능을 위한 최종 로직 ---
+
+        // 1. 서비스 워커로부터 파일을 수신하는 리스너
         navigator.serviceWorker.addEventListener('message', event => {
             const file = event.data.file;
             if (file) {
@@ -107,7 +106,32 @@
             }
         });
 
-        // 이미지 파일을 처리하는 공통 함수
+        // 2. 서비스 워커에게 보관중인 파일이 있는지 물어보는 함수
+        function requestSharedFile() {
+            if (navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({ action: 'get-shared-file' });
+            }
+        }
+
+        // 3. 서비스 워커 등록 및 파일 요청 실행
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful');
+                        // 서비스 워커가 완전히 준비되면 파일을 요청합니다.
+                        registration.ready.then(() => {
+                            requestSharedFile();
+                        });
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+        
+        // --- 이미지 처리 및 나머지 앱 로직 ---
+
         function handleImageFile(file) {
             if (!file || !file.type.startsWith('image/')) return;
             
@@ -124,14 +148,12 @@
                     history = [];
                     saveState();
                     updateSelectionDisplay();
-                    // 이미지가 로드되면 캔버스 영역으로 스크롤
                     canvas.scrollIntoView({ behavior: 'smooth' });
                 };
                 originalImage.src = event.target.result;
             };
             reader.readAsDataURL(file);
         }
-        // --- 여기까지 ---
 
         const saveState = () => {
             history.push(JSON.parse(JSON.stringify(selections)));
@@ -154,7 +176,6 @@
 
         undoButton.addEventListener('click', undo);
 
-        // 기존 파일 선택 로직을 새 함수를 사용하도록 변경
         imageLoader.addEventListener('change', (e) => {
             const file = e.target.files[0];
             handleImageFile(file);
@@ -286,21 +307,6 @@
         canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startSelection(e); });
         canvas.addEventListener('touchmove', (e) => { e.preventDefault(); drawSelection(e); });
         canvas.addEventListener('touchend', endSelection);
-    </script>
-
-    <!-- PWA 서비스 워커 등록 스크립트 -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./service-worker.js')
-            .then(registration => {
-              console.log('ServiceWorker registration successful');
-            })
-            .catch(err => {
-              console.log('ServiceWorker registration failed: ', err);
-            });
-        });
-      }
     </script>
 </body>
 </html>
