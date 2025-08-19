@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>스크롤 캡처 편집기</title>
+    <!-- 이 부분을 수정했습니다! 이제 브라우저에 '캡처 편집기 v1.0'으로 표시됩니다. -->
+    <title>캡처 편집기 v1.0</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a73e8">
@@ -96,22 +97,33 @@
         let selections = [];
         let history = [];
 
-        // --- 공유 기능을 위한 개선된 최종 로직 ---
+        async function checkForSharedImage() {
+            try {
+                const cache = await caches.open('shared-image-cache-v1');
+                const response = await cache.match('shared-image');
 
-        // 1. 서비스 워커로부터 파일을 수신하면 바로 이미지를 처리합니다.
-        navigator.serviceWorker.addEventListener('message', event => {
-            const file = event.data.file;
-            if (file) {
-                handleImageFile(file);
+                if (response) {
+                    const blob = await response.blob();
+                    const file = new File([blob], "shared-image.jpg", { type: blob.type });
+                    handleImageFile(file);
+                    cache.delete('shared-image');
+                }
+            } catch (error) {
+                console.error('Error checking for shared image:', error);
             }
-        });
+        }
 
-        // 2. 서비스 워커를 등록합니다. (이제 앱에서 파일을 요청할 필요가 없습니다.)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./service-worker.js')
                     .then(registration => {
                         console.log('ServiceWorker registration successful');
+                        if (navigator.serviceWorker.controller) {
+                            checkForSharedImage();
+                        }
+                        navigator.serviceWorker.oncontrollerchange = () => {
+                            checkForSharedImage();
+                        };
                     })
                     .catch(err => {
                         console.log('ServiceWorker registration failed: ', err);
@@ -119,8 +131,6 @@
             });
         }
         
-        // --- 이미지 처리 및 나머지 앱 로직 ---
-
         function handleImageFile(file) {
             if (!file || !file.type.startsWith('image/')) return;
             
@@ -283,6 +293,7 @@
             const dataUrl = newCanvas.toDataURL('image/jpeg', 0.95);
             resultImage.src = dataUrl;
             downloadLink.href = dataUrl;
+            // 다운로드 파일 이름은 원래 로직 그대로 유지합니다.
             const nameWithoutExtension = originalFileName.lastIndexOf('.') > 0 ? originalFileName.substring(0, originalFileName.lastIndexOf('.')) : originalFileName;
             downloadLink.download = `${nameWithoutExtension}.jpg`;
             resultContainer.style.display = 'block';
