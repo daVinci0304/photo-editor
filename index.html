@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>스크롤 캡처 편집기 (최종)</title>
+    <title>스크롤 캡처 편집기</title>
     
-    <!-- PWA를 위한 추가 코드 1: manifest.json 연결 -->
+    <!-- PWA를 위한 manifest.json 연결 -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a73e8">
 
     <style>
-        /* CSS는 이전과 동일합니다. */
+        /* CSS는 변경되지 않았습니다. */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
             background-color: #f0f2f5; color: #333; margin: 0; padding: 20px;
@@ -81,7 +81,6 @@
     </div>
 
     <script>
-        // 기존 자바스크립트 코드는 여기에 그대로 유지됩니다.
         const imageLoader = document.getElementById('image-loader');
         const canvas = document.getElementById('image-canvas');
         const ctx = canvas.getContext('2d');
@@ -98,6 +97,41 @@
         let currentSelection = { startY: 0, endY: 0 };
         let selections = [];
         let history = [];
+
+        // --- 공유 기능을 위해 추가/수정된 부분 ---
+        // 서비스 워커로부터 공유된 파일을 받는 리스너
+        navigator.serviceWorker.addEventListener('message', event => {
+            const file = event.data.file;
+            if (file) {
+                handleImageFile(file);
+            }
+        });
+
+        // 이미지 파일을 처리하는 공통 함수
+        function handleImageFile(file) {
+            if (!file || !file.type.startsWith('image/')) return;
+            
+            originalFileName = file.name;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                originalImage = new Image();
+                originalImage.onload = () => {
+                    canvas.width = originalImage.width;
+                    canvas.height = originalImage.height;
+                    ctx.drawImage(originalImage, 0, 0);
+                    resultContainer.style.display = 'none';
+                    selections = [];
+                    history = [];
+                    saveState();
+                    updateSelectionDisplay();
+                    // 이미지가 로드되면 캔버스 영역으로 스크롤
+                    canvas.scrollIntoView({ behavior: 'smooth' });
+                };
+                originalImage.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        // --- 여기까지 ---
 
         const saveState = () => {
             history.push(JSON.parse(JSON.stringify(selections)));
@@ -120,26 +154,10 @@
 
         undoButton.addEventListener('click', undo);
 
+        // 기존 파일 선택 로직을 새 함수를 사용하도록 변경
         imageLoader.addEventListener('change', (e) => {
             const file = e.target.files[0];
-            if (!file) return;
-            originalFileName = file.name;
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                originalImage = new Image();
-                originalImage.onload = () => {
-                    canvas.width = originalImage.width;
-                    canvas.height = originalImage.height;
-                    ctx.drawImage(originalImage, 0, 0);
-                    resultContainer.style.display = 'none';
-                    selections = [];
-                    history = [];
-                    saveState();
-                    updateSelectionDisplay();
-                };
-                originalImage.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
+            handleImageFile(file);
         });
 
         const getClientY = (e) => e.touches ? e.touches[0].clientY : e.clientY;
@@ -232,8 +250,6 @@
 
             const newHeight = originalImage.height - totalRemovedHeight;
             if (newHeight <= 0) {
-                // alert()는 PWA에서 잘 보이지 않을 수 있으므로, 다른 방식을 고려하는 것이 좋습니다.
-                // 여기서는 일단 유지합니다.
                 alert("이미지의 모든 부분이 선택되어 저장할 내용이 없습니다.");
                 return;
             }
@@ -272,7 +288,7 @@
         canvas.addEventListener('touchend', endSelection);
     </script>
 
-    <!-- PWA를 위한 추가 코드 2: 서비스 워커 등록 -->
+    <!-- PWA 서비스 워커 등록 스크립트 -->
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
