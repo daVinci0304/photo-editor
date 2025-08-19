@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>캡처 편집기 v2.0</title>
+    <title>캡처 편집기 v2.1</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a73e8">
@@ -91,14 +91,12 @@
 
         let originalImage = null;
         let originalFileName = 'edited-image.png';
+        let originalFileType = 'image/png'; // 파일 타입을 저장할 변수 추가
         let isSelecting = false;
         let currentSelection = { startY: 0, endY: 0 };
         let selections = [];
         let history = [];
 
-        // --- 공유 기능을 위한 '보관함(Cache)' 방식 최종 로직 ---
-
-        // 1. '보관함'을 확인해서 공유된 이미지가 있는지 확인하는 함수
         async function checkForSharedImage() {
             try {
                 const cache = await caches.open('shared-image-cache-v1');
@@ -106,9 +104,9 @@
 
                 if (response) {
                     const blob = await response.blob();
-                    const file = new File([blob], "shared-image.jpg", { type: blob.type });
+                    // 공유된 파일의 이름을 알 수 없으므로 기본 이름을 사용합니다.
+                    const file = new File([blob], "shared-image.png", { type: blob.type });
                     handleImageFile(file);
-                    // 중요: 사용한 이미지는 보관함에서 삭제하여 다음 실행에 영향을 주지 않도록 합니다.
                     cache.delete('shared-image');
                 }
             } catch (error) {
@@ -116,13 +114,11 @@
             }
         }
 
-        // 2. 서비스 워커 등록 및 보관함 확인 실행 (가장 안정적인 최종 버전)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./service-worker.js')
                     .then(registration => {
                         console.log('ServiceWorker registration successful');
-                        // 페이지 로드 시 즉시 보관함을 확인합니다.
                         checkForSharedImage();
                     })
                     .catch(err => {
@@ -131,12 +127,12 @@
             });
         }
         
-        // --- 이미지 처리 및 나머지 앱 로직 ---
-
         function handleImageFile(file) {
             if (!file || !file.type.startsWith('image/')) return;
             
             originalFileName = file.name;
+            originalFileType = file.type; // 원본 파일의 타입을 저장합니다.
+            
             const reader = new FileReader();
             reader.onload = (event) => {
                 originalImage = new Image();
@@ -292,11 +288,13 @@
                 }
             });
 
-            const dataUrl = newCanvas.toDataURL('image/jpeg', 0.95);
+            // --- 파일 이름 및 타입 수정된 부분 ---
+            const dataUrl = newCanvas.toDataURL(originalFileType, 0.95); // 원본 파일 타입으로 저장
             resultImage.src = dataUrl;
             downloadLink.href = dataUrl;
-            const nameWithoutExtension = originalFileName.lastIndexOf('.') > 0 ? originalFileName.substring(0, originalFileName.lastIndexOf('.')) : originalFileName;
-            downloadLink.download = `${nameWithoutExtension}.jpg`;
+            downloadLink.download = originalFileName; // 원본 파일 이름 전체를 사용
+            // --- 여기까지 수정 ---
+
             resultContainer.style.display = 'block';
             resultContainer.scrollIntoView({ behavior: 'smooth' });
         });
